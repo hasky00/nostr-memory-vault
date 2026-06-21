@@ -1,0 +1,144 @@
+@import "tailwindcss";
+
+:root {
+  --ink: #1a1a2e;
+  --ink-soft: #4a4a6a;
+  --paper: #f7f6f3;
+  --card: #ffffff;
+  --accent: #6c63ff;
+  --accent-soft: #ede9ff;
+  --border: #e8e6f0;
+  --success: #22c55e;
+  --danger: #ef4444;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Inter', system-ui, sans-serif;
+  min-height: 100dvh;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: white;
+  border-radius: 14px;
+  padding: 14px 24px;
+  font-weight: 600;
+  font-size: 16px;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+  touch-action: manipulation;
+}
+
+.btn-primary:active {
+  opacity: 0.85;
+  transform: scale(0.98);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--ink-soft);
+  border-radius: 14px;
+  padding: 12px 20px;
+  font-weight: 500;
+  font-size: 15px;
+  border: 1.5px solid var(--border);
+  cursor: pointer;
+  transition: background 0.15s;
+  touch-action: manipulation;
+}
+
+.btn-ghost:active {
+  background: var(--border);
+}
+
+input, textarea {
+  background: var(--paper);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 16px;
+  color: var(--ink);
+  width: 100%;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+
+input:focus, textarea:focus {
+  border-color: var(--accent);
+}
+
+.folder-chip {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: background 0.15s;
+}
+
+.folder-chip.active {
+  background: var(--accent);
+  color: white;
+}
+
+.fab {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 50px;
+  padding: 16px 32px;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(108, 99, 255, 0.4);
+  touch-action: manipulation;
+  white-space: nowrap;
+  transition: transform 0.15s, box-shadow 0.15s;
+  z-index: 50;
+}
+
+.fab:active {
+  transform: translateX(-50%) scale(0.97);
+  box-shadow: 0 4px 12px rgba(108, 99, 255, 0.4);
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(26, 26, 46, 0.5);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  padding: 0;
+}
+
+.modal-sheet {
+  background: white;
+  border-radius: 24px 24px 0 0;
+  padding: 24px 20px calc(env(safe-area-inset-bottom) + 24px);
+  width: 100%;
+  max-height: 92dvh;
+  overflow-y: auto;
+}
