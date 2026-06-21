@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   VaultNote,
-  getPublicKey,
+  loginWithExtension,
+  loginWithNsec,
   isNip07Available,
   publishNote,
   fetchNotes,
@@ -12,9 +13,11 @@ import {
 } from "@/lib/nostr";
 
 type Screen = "home" | "new";
+type LoginMethod = "extension" | "nsec";
 
 export default function Home() {
   const [pubkey, setPubkey] = useState<string | null>(null);
+  const [privkey, setPrivkey] = useState<Uint8Array | undefined>(undefined);
   const [notes, setNotes] = useState<VaultNote[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -22,35 +25,51 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [noExtension, setNoExtension] = useState(false);
 
+  // Login form
+  const [loginMethod, setLoginMethod] = useState<LoginMethod | null>(null);
+  const [nsecInput, setNsecInput] = useState("");
+  const [showNsec, setShowNsec] = useState(false);
+
+  // New note form
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [folder, setFolder] = useState("General");
   const [publishing, setPublishing] = useState(false);
   const [publishSuccess, setPublishSuccess] = useState(false);
 
-  const login = useCallback(async () => {
-    if (!isNip07Available()) { setNoExtension(true); return; }
-    setLoading(true); setError(null);
-    try {
-      const pk = await getPublicKey();
-      setPubkey(pk);
-    } catch { setError("Login cancelled or failed."); }
-    finally { setLoading(false); }
-  }, []);
-
-  const sync = useCallback(async () => {
-    if (!pubkey) return;
+  const sync = useCallback(async (pk: string) => {
     setSyncing(true); setError(null);
     try {
-      const fetched = await fetchNotes(pubkey);
+      const fetched = await fetchNotes(pk);
       setNotes(fetched);
     } catch { setError("Could not sync from relays."); }
     finally { setSyncing(false); }
-  }, [pubkey]);
+  }, []);
 
-  useEffect(() => { if (pubkey) sync(); }, [pubkey, sync]);
+  useEffect(() => { if (pubkey) sync(pubkey); }, [pubkey, sync]);
+
+  const handleExtensionLogin = async () => {
+    setLoading(true); setError(null);
+    try {
+      const pk = await loginWithExtension();
+      setPubkey(pk);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "";
+      setError(msg === "NO_EXTENSION" ? "No Nostr extension found." : "Login cancelled.");
+    } finally { setLoading(false); }
+  };
+
+  const handleNsecLogin = () => {
+    setError(null);
+    try {
+      const { pubkey: pk, privkey: priv } = loginWithNsec(nsecInput.trim());
+      setPrivkey(priv);
+      setPubkey(pk);
+    } catch {
+      setError("Invalid private key. Make sure it starts with nsec1...");
+    }
+  };
 
   const folders = Array.from(new Set(notes.map((n) => n.folder))).sort();
 
@@ -74,7 +93,7 @@ export default function Home() {
         folder: folder.trim() || "General",
         createdAt: Date.now(),
       };
-      const eventId = await publishNote(note);
+      const eventId = await publishNote(note, privkey);
       note.eventId = eventId;
       setNotes((prev) => [note, ...prev]);
       setPublishSuccess(true);
@@ -82,25 +101,12 @@ export default function Home() {
         setPublishSuccess(false); setScreen("home");
         setTitle(""); setContent(""); setFolder("General");
       }, 1200);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "";
-      setError(msg === "NO_EXTENSION" ? "No Nostr extension found." : "Failed to publish. Try again.");
+    } catch {
+      setError("Failed to publish. Try again.");
     } finally { setPublishing(false); }
   };
 
-  if (noExtension) {
-    return (
-      <main style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", minHeight:"100dvh", padding:"24px", textAlign:"center" }}>
-        <div style={{ fontSize:"48px", marginBottom:"16px" }}>🔐</div>
-        <h1 style={{ fontSize:"22px", fontWeight:"700", marginBottom:"8px", color:"var(--ink)" }}>Nostr Extension Required</h1>
-        <p style={{ color:"var(--ink-soft)", marginBottom:"24px", lineHeight:"1.6" }}>
-          Open this in a Nostr-compatible browser or install an extension like <strong>Alby</strong> or <strong>nos2x</strong>.
-        </p>
-        <button className="btn-ghost" onClick={() => setNoExtension(false)}>← Back</button>
-      </main>
-    );
-  }
-
+  // ── Login screen ──
   if (!pubkey) {
     return (
       <main style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", minHeight:"100dvh", padding:"24px", textAlign:"center" }}>
@@ -109,19 +115,81 @@ export default function Home() {
           <h1 style={{ fontSize:"28px", fontWeight:"800", letterSpacing:"-0.5px", color:"var(--ink)", marginBottom:"8px" }}>
             Nostr Memory Vault
           </h1>
-          <p style={{ color:"var(--ink-soft)", fontSize:"16px" }}>Your private thoughts, synced through Nostr.</p>
+          <p style={{ color:"var(--ink-soft)", fontSize:"15px" }}>Your private thoughts, synced through Nostr.</p>
         </div>
-        {error && <p style={{ background:"#fee2e2", color:"var(--danger)", borderRadius:"12px", padding:"10px 16px", fontSize:"14px", marginBottom:"16px" }}>{error}</p>}
-        <button className="btn-primary" style={{ width:"100%", maxWidth:"280px" }} onClick={login} disabled={loading}>
-          {loading ? "Connecting…" : "Connect with Nostr"}
-        </button>
-        <p style={{ color:"var(--ink-soft)", fontSize:"12px", marginTop:"12px" }}>
-          NIP-07 extension · No server · No account
-        </p>
+
+        {!loginMethod ? (
+          <div style={{ width:"100%", maxWidth:"300px", display:"flex", flexDirection:"column", gap:"12px" }}>
+            {isNip07Available() && (
+              <button className="btn-primary" onClick={() => { setLoginMethod("extension"); handleExtensionLogin(); }} disabled={loading}>
+                {loading ? "Connecting…" : "🔌 Connect with Extension"}
+              </button>
+            )}
+            <button
+              className={isNip07Available() ? "btn-ghost" : "btn-primary"}
+              style={{ width:"100%" }}
+              onClick={() => setLoginMethod("nsec")}
+            >
+              🔑 Login with Private Key
+            </button>
+            {!isNip07Available() && (
+              <p style={{ color:"var(--ink-soft)", fontSize:"12px", marginTop:"4px" }}>
+                No extension detected — use your nsec key instead.
+              </p>
+            )}
+          </div>
+        ) : loginMethod === "nsec" ? (
+          <div style={{ width:"100%", maxWidth:"300px", display:"flex", flexDirection:"column", gap:"12px" }}>
+            <div style={{ textAlign:"left" }}>
+              <label style={{ fontSize:"13px", fontWeight:"500", color:"var(--ink-soft)", display:"block", marginBottom:"6px" }}>
+                Your private key (nsec1...)
+              </label>
+              <div style={{ position:"relative" }}>
+                <input
+                  type={showNsec ? "text" : "password"}
+                  placeholder="nsec1..."
+                  value={nsecInput}
+                  onChange={(e) => setNsecInput(e.target.value)}
+                  autoFocus
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  style={{ paddingRight:"48px" }}
+                />
+                <button
+                  onClick={() => setShowNsec((p) => !p)}
+                  style={{ position:"absolute", right:"12px", top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", fontSize:"16px", color:"var(--ink-soft)" }}
+                >
+                  {showNsec ? "🙈" : "👁️"}
+                </button>
+              </div>
+              <p style={{ fontSize:"11px", color:"var(--ink-soft)", marginTop:"6px", lineHeight:"1.5" }}>
+                ⚠️ Your key never leaves your device. We sign locally.
+              </p>
+            </div>
+
+            {error && (
+              <p style={{ background:"#fee2e2", color:"var(--danger)", borderRadius:"12px", padding:"10px 14px", fontSize:"13px", textAlign:"left" }}>{error}</p>
+            )}
+
+            <button className="btn-primary" onClick={handleNsecLogin} disabled={!nsecInput.trim()}>
+              Login
+            </button>
+            <button className="btn-ghost" onClick={() => { setLoginMethod(null); setError(null); setNsecInput(""); }}>
+              ← Back
+            </button>
+          </div>
+        ) : null}
+
+        {loginMethod === "extension" && error && (
+          <p style={{ background:"#fee2e2", color:"var(--danger)", borderRadius:"12px", padding:"10px 14px", fontSize:"13px", marginTop:"12px", maxWidth:"300px" }}>{error}</p>
+        )}
       </main>
     );
   }
 
+  // ── New note sheet ──
   if (screen === "new") {
     return (
       <div className="modal-overlay" onClick={() => setScreen("home")}>
@@ -153,7 +221,7 @@ export default function Home() {
             {error && <p style={{ background:"#fee2e2", color:"var(--danger)", borderRadius:"12px", padding:"10px 16px", fontSize:"13px" }}>{error}</p>}
             {publishSuccess
               ? <div style={{ textAlign:"center", padding:"12px", color:"var(--success)", fontWeight:"600" }}>✓ Saved to Nostr!</div>
-              : <button className="btn-primary" style={{ width:"100%", marginTop:"4px", opacity: (!title.trim() || !content.trim()) ? 0.5 : 1 }} onClick={handlePublish} disabled={publishing || !title.trim() || !content.trim()}>
+              : <button className="btn-primary" style={{ width:"100%", marginTop:"4px", opacity:(!title.trim() || !content.trim()) ? 0.5 : 1 }} onClick={handlePublish} disabled={publishing || !title.trim() || !content.trim()}>
                   {publishing ? "Publishing…" : "Save Memory"}
                 </button>
             }
@@ -163,12 +231,13 @@ export default function Home() {
     );
   }
 
+  // ── Home screen ──
   return (
     <main style={{ minHeight:"100dvh", paddingBottom:"112px", background:"var(--paper)" }}>
       <div style={{ padding:"48px 20px 16px" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"4px" }}>
           <h1 style={{ fontSize:"24px", fontWeight:"800", letterSpacing:"-0.5px", color:"var(--ink)" }}>Memory Vault</h1>
-          <button onClick={sync} disabled={syncing}
+          <button onClick={() => sync(pubkey)} disabled={syncing}
             style={{ fontSize:"13px", padding:"6px 12px", borderRadius:"20px", border:"none", background:"var(--accent-soft)", color:"var(--accent)", fontWeight:"600", cursor:"pointer" }}>
             {syncing ? "Syncing…" : "⟳ Sync"}
           </button>
